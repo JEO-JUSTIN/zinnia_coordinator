@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#12141d] text-slate-100 min-h-screen;
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1.5px, transparent 1.5px);
+    background-size: 24px 24px;
+  }
+}
+
+/* Comic Book Halftone Dots Pattern */
+.comic-halftone {
+  background-image: radial-gradient(#000000 20%, transparent 20%), radial-gradient(#000000 20%, transparent 20%);
+  background-position: 0 0, 4px 4px;
+  background-size: 8px 8px;
+}
+
+.comic-halftone-light {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.15) 20%, transparent 20%);
+  background-size: 6px 6px;
+}
+
+.comic-halftone-white {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.12) 20%, transparent 20%);
+  background-size: 8px 8px;
+}
+
+/* Comic Striped Diagonal Pattern */
+.comic-stripes {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.1),
+    rgba(0, 0, 0, 0.1) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+}
+
+/* Title Styling */
+.comic-title-stroke {
+  text-shadow: none;
+}
+
+.comic-title-stroke-sm {
+  text-shadow: none;
+}
+
+/* Comic Speech Bubble Tail */
+.comic-speech-tail-bottom {
+  position: relative;
+}
+.comic-speech-tail-bottom::after {
+  content: '';
+  position: absolute;
+  bottom: -14px;
+  left: 28px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 14px 12px 0 0;
+  border-color: #000 transparent transparent transparent;
+}
+.comic-speech-tail-bottom::before {
+  content: '';
+  position: absolute;
+  bottom: -9px;
+  left: 30px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 11px 9px 0 0;
+  border-color: #00F0FF transparent transparent transparent;
+  z-index: 1;
+}
+
+/* Comic Interactive Button */
+.comic-btn {
+  transition: all 0.12s ease-in-out;
+}
+.comic-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0px #000000 !important;
+}
+.comic-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px #000000 !important;
+}
+
+/* Custom crisp scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #11131a;
+  border-left: 2px solid #000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border: 2px solid #000;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00F0FF;
+}
+
+/* HTML5 QR Code Overrides for ultra-clean look */
+#reader-viewport {
+  border: none !important;
+}
+
+#reader-viewport video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 0.5rem !important;
+}
+
+#reader-viewport img {
+  display: none !important;
+}
+
+/* High-tech Laser Scanner Sweep Animation */
+@keyframes laserSweep {
+  0% {
+    top: 0px;
+    opacity: 0.2;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    top: calc(100% - 8px);
+    opacity: 0.2;
+  }
+}
+
+.laser-scanner-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  animation: laserSweep 2s ease-in-out infinite alternate;
+}
