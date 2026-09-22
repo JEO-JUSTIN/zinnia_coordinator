@@ -124,9 +124,7 @@ export const Login: React.FC = () => {
 
           {/* Comic Footer Notice */}
           <div className="mt-5 pt-3 border-t-2 border-black border-dashed text-center">
-            <p className="text-[11px] text-slate-300 font-bold">
-              LINKED TO LIVE DATABASE: <span className="bg-black text-[#00F0FF] px-1.5 py-0.5 border border-[#00F0FF] font-mono text-[10px]">public.admin_users</span>
-            </p>
+  
             <p className="text-[10px] text-slate-400 mt-1 font-comic-body">
               Authenticate using your registered coordinator credentials to unlock permissions.
             </p>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../lib/auth';
 import { 
   LogOut, 
@@ -10,7 +10,6 @@ import {
   Cpu, 
   Compass
 } from 'lucide-react';
-import { MOCK_ADMIN_PROFILES } from '../../lib/mockData';
 
 interface NavbarProps {
   currentTab: string;
@@ -18,8 +17,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => {
-  const { profile, assignments, permissions, signOut, switchDemoUser } = useAuth();
-  const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
+  const { profile, assignments, permissions, signOut } = useAuth();
 
   const getPrimaryRoleBadge = () => {
     if (permissions.isSuperAdmin) {
@@ -158,16 +156,13 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
           {/* User Profile & Actions */}
           <div className="flex items-center gap-2.5">
 
-            {/* Role Tester / Switcher */}
-            <button
-              onClick={() => setShowRoleSwitcher(true)}
-              className="flex items-center gap-1.5 font-comic tracking-wider text-xs px-1 py-0.5 transition-transform hover:scale-105 active:scale-95 cursor-pointer"
-            >
+            {/* Role Badge */}
+            <div className="flex items-center gap-1.5 font-comic tracking-wider text-xs px-1 py-0.5">
               <span className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-comic tracking-wider uppercase ${badge.color}`}>
                 <BadgeIcon className="w-3.5 h-3.5 stroke-[2.5]" />
                 {badge.label}
               </span>
-            </button>
+            </div>
 
             {/* Coordinator Name & Sign out */}
             <div className="flex items-center gap-2">
@@ -193,77 +188,6 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
 
         </div>
       </header>
-
-      {/* Role Switcher Modal (Comic Styled Dossier) */}
-      {showRoleSwitcher && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#1b1f2d] border-[3.5px] border-black p-5 sm:p-6 max-w-md w-full shadow-comic-xl animate-in fade-in zoom-in duration-150 relative">
-            
-            {/* Comic Header Bar */}
-            <div className="flex items-center justify-between pb-3 border-b-2 border-black">
-              <div className="flex items-center gap-2">
-                <span className="p-1 bg-[#00F0FF] text-black border-2 border-black shadow-comic-sm">
-                  <UserCheck className="w-5 h-5 stroke-[2.5]" />
-                </span>
-                <h3 className="text-lg font-comic tracking-wider text-white uppercase">
-                  SIMULATE COORDINATOR ROLE
-                </h3>
-              </div>
-              <button 
-                onClick={() => setShowRoleSwitcher(false)} 
-                className="w-7 h-7 bg-[#FF3366] text-white font-bold border-2 border-black shadow-comic-sm flex items-center justify-center text-xs hover:bg-rose-600 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-            
-            <div className="my-3 p-2 bg-[#00F0FF] text-black border-2 border-black text-xs font-bold font-comic-body">
-              Switch roles to verify that permissions and restricted areas update instantly:
-            </div>
-
-            <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-              {MOCK_ADMIN_PROFILES.map(user => (
-                <button
-                  key={user.id}
-                  onClick={() => {
-                    switchDemoUser(user.id);
-                    setShowRoleSwitcher(false);
-                  }}
-                  className={`w-full text-left p-2.5 border-2 transition-all flex items-center justify-between cursor-pointer ${
-                    profile?.id === user.id 
-                      ? 'bg-[#00F0FF] text-black border-black shadow-comic-sm font-bold' 
-                      : 'bg-[#12141d] border-black text-slate-200 hover:bg-slate-800'
-                  }`}
-                >
-                  <div>
-                    <div className="text-xs font-bold uppercase flex items-center gap-1.5 font-comic tracking-wider">
-                      {user.full_name}
-                      {!user.is_active && (
-                        <span className="text-[9px] px-1 bg-[#FF3366] text-white border border-black font-mono">
-                          INACTIVE
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                      ASSIGNMENT: <span className="text-[#00F0FF] font-bold">{user.role}</span>
-                    </div>
-                  </div>
-                  <span className="text-xs font-comic tracking-wider px-2 py-0.5 bg-black text-[#00F0FF] border border-black uppercase font-bold">
-                    SELECT →
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <button
-              onClick={() => setShowRoleSwitcher(false)}
-              className="mt-4 w-full py-2 font-comic tracking-wider uppercase text-sm bg-slate-700 hover:bg-slate-600 text-white border-2 border-black shadow-comic-sm cursor-pointer"
-            >
-              CLOSE DOSSIER
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 };
