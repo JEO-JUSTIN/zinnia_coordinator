@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode, Html5QrcodeCameraScanConfig } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeCameraScanConfig, Html5QrcodeScannerState } from 'html5-qrcode';
 import { Camera, SwitchCamera, Zap, ZapOff, Keyboard, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface QRScannerProps {
@@ -7,119 +7,201 @@ interface QRScannerProps {
   isProcessing: boolean;
 }
 
+const CODE_PREFIX = 'ZIN26-';
+
 export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, isProcessing }) => {
   const [scannerStarted, setScannerStarted] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState<boolean>(false);
   const [torchOn, setTorchOn] = useState<boolean>(false);
   const [hasTorch, setHasTorch] = useState<boolean>(false);
   const [showManualModal, setShowManualModal] = useState<boolean>(false);
-  const [manualTokenInput, setManualTokenInput] = useState<string>('');
+  const [manualTokenInput, setManualTokenInput] = useState<string>(CODE_PREFIX);
+  const manualInputRef = useRef<HTMLInputElement | null>(null);
 
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const lastScannedTimeRef = useRef<number>(0);
+  const isMountedRef = useRef<boolean>(true);
+  const isStartingRef = useRef<boolean>(false);
+  const isStoppingRef = useRef<boolean>(false);
 
   const scannerElementId = 'reader-viewport';
 
-  useEffect(() => {
-    let isMounted = true;
+  // Explicitly release any active hardware MediaStream tracks on the video element
+  const releaseCameraTracks = () => {
+    try {
+      // 1. Direct running track cleanup from html5-qrcode
+      // @ts-expect-error html5-qrcode internal track
+      const track = html5QrCodeRef.current?.getRunningTrack?.();
+      if (track) {
+        track.stop();
+      }
+    } catch {}
 
-    const stopScanner = async () => {
+    // 2. Force-stop all MediaStream tracks on any <video> elements in the viewport
+    const container = document.getElementById(scannerElementId);
+    if (container) {
+      const videos = container.querySelectorAll('video');
+      videos.forEach((video) => {
+        if (video.srcObject) {
+          try {
+            const stream = video.srcObject as MediaStream;
+            stream.getTracks().forEach((t) => {
+              try {
+                t.stop();
+              } catch {}
+            });
+          } catch {}
+          video.srcObject = null;
+        }
+      });
+    }
+  };
+
+  const stopScanner = async () => {
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
+
+    try {
       const scanner = html5QrCodeRef.current;
       if (scanner) {
         try {
-          if (scanner.isScanning) {
+          const state = scanner.getState();
+          if (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED) {
             await scanner.stop();
           }
-        } catch {
-          // ignore scanner not running errors
+        } catch (stopErr) {
+          console.warn('html5QrCode.stop error:', stopErr);
         }
+
         try {
           scanner.clear();
-        } catch {
-          // ignore
-        }
+        } catch {}
+
         html5QrCodeRef.current = null;
       }
-    };
 
-    const startScanner = async () => {
-      try {
-        setCameraError(null);
-        await stopScanner();
+      // Force hardware release
+      releaseCameraTracks();
+      setScannerStarted(false);
+      setTorchOn(false);
+      setHasTorch(false);
+    } finally {
+      isStoppingRef.current = false;
+    }
+  };
 
-        if (!isMounted) return;
+  const startScanner = async () => {
+    if (!isMountedRef.current || showManualModal) return;
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
 
-        // Check if element exists in DOM
-        const element = document.getElementById(scannerElementId);
-        if (!element) return;
+    try {
+      setCameraError(null);
+      await stopScanner();
 
-        const html5QrCode = new Html5Qrcode(scannerElementId);
-        html5QrCodeRef.current = html5QrCode;
+      if (!isMountedRef.current || showManualModal) return;
 
-        const config: Html5QrcodeCameraScanConfig = {
-          fps: 15,
-          qrbox: { width: 260, height: 260 },
-          aspectRatio: 1.0,
-        };
+      const element = document.getElementById(scannerElementId);
+      if (!element) return;
 
-        await html5QrCode.start(
-          { facingMode: facingMode },
-          config,
-          (decodedText) => {
-            const now = Date.now();
-            // 1.5 second throttle to avoid accidental repeat triggers
-            if (now - lastScannedTimeRef.current > 1500 && !isProcessing) {
-              lastScannedTimeRef.current = now;
-              onScanSuccess(decodedText);
-            }
-          },
-          () => {
-            // Scan frame ignored (no QR found in current frame)
+      const html5QrCode = new Html5Qrcode(scannerElementId);
+      html5QrCodeRef.current = html5QrCode;
+
+      const config: Html5QrcodeCameraScanConfig = {
+        fps: 15,
+        qrbox: { width: 260, height: 260 },
+        aspectRatio: 1.0,
+      };
+
+      await html5QrCode.start(
+        { facingMode: facingMode },
+        config,
+        (decodedText) => {
+          const now = Date.now();
+          if (now - lastScannedTimeRef.current > 1500 && !isProcessing) {
+            lastScannedTimeRef.current = now;
+            onScanSuccess(decodedText);
           }
-        );
+        },
+        () => {}
+      );
 
-        if (isMounted) {
-          setScannerStarted(true);
-          // Check for torch capability
-          try {
-            // @ts-expect-error html5-qrcode internal track
-            const track = html5QrCode.getRunningTrack();
-            if (track) {
-              const capabilities = track.getCapabilities?.();
-              if (capabilities && 'torch' in capabilities) {
-                setHasTorch(true);
-              }
+      if (isMountedRef.current && !showManualModal) {
+        setScannerStarted(true);
+        setIsSwitchingCamera(false);
+        try {
+          // @ts-expect-error html5-qrcode internal track
+          const track = html5QrCode.getRunningTrack();
+          if (track) {
+            const capabilities = track.getCapabilities?.();
+            if (capabilities && 'torch' in capabilities) {
+              setHasTorch(true);
             }
-          } catch {
-            setHasTorch(false);
           }
-        } else {
-          // Unmounted while starting
-          stopScanner();
+        } catch {
+          setHasTorch(false);
         }
-      } catch (err) {
-        if (!isMounted) return;
-        console.warn('Camera start error:', err);
-        setScannerStarted(false);
-        const msg = err instanceof Error ? err.message : String(err);
-        setCameraError(
-          msg.includes('NotAllowedError') || msg.includes('Permission')
-            ? 'Camera permission was denied. Please allow camera access in browser settings.'
-            : 'Camera busy or not available. You can also type or paste the passport token below.'
-        );
+      } else {
+        await stopScanner();
+      }
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      console.warn('Camera start error:', err);
+      setScannerStarted(false);
+      setIsSwitchingCamera(false);
+      releaseCameraTracks();
+      const msg = err instanceof Error ? err.message : String(err);
+      setCameraError(
+        msg.includes('NotAllowedError') || msg.includes('Permission')
+          ? 'Camera permission was denied. Please allow camera access in browser settings.'
+          : 'Camera busy or not available. You can also type or paste the participant code below.'
+      );
+    } finally {
+      isStartingRef.current = false;
+    }
+  };
+
+  // Main lifecycle: starts camera when visible and modal is closed; cleans up when unmounted or manual modal open
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    if (!showManualModal) {
+      startScanner();
+    } else {
+      stopScanner();
+    }
+
+    return () => {
+      isMountedRef.current = false;
+      stopScanner();
+    };
+  }, [facingMode, showManualModal]);
+
+  // Release camera hardware when tab/window is inactive or minimized
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        stopScanner();
+      } else if (document.visibilityState === 'visible' && !showManualModal) {
+        startScanner();
       }
     };
 
-    startScanner();
-
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
-      isMounted = false;
-      stopScanner();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [facingMode]);
+  }, [showManualModal, facingMode]);
 
-  const toggleCamera = () => {
+  // Flip camera: completely release old camera first, then switch facing mode
+  const toggleCamera = async () => {
+    if (isSwitchingCamera || isStartingRef.current) return;
+    setIsSwitchingCamera(true);
+    setTorchOn(false);
+    setHasTorch(false);
+    await stopScanner();
     setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'));
   };
 
@@ -141,12 +223,42 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, isProcessin
     }
   };
 
+  const openManualModal = async () => {
+    setManualTokenInput(CODE_PREFIX);
+    setShowManualModal(true);
+    // Explicitly release camera hardware while user is typing in manual modal
+    await stopScanner();
+  };
+
+  const closeManualModal = () => {
+    setShowManualModal(false);
+    setManualTokenInput(CODE_PREFIX);
+  };
+
+  useEffect(() => {
+    if (showManualModal && manualInputRef.current) {
+      const len = manualInputRef.current.value.length;
+      manualInputRef.current.focus();
+      manualInputRef.current.setSelectionRange(len, len);
+    }
+  }, [showManualModal]);
+
+  const handleManualInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.toUpperCase();
+    if (!val.startsWith(CODE_PREFIX)) {
+      const rest = val.replace(/^ZIN26-?/i, '');
+      val = `${CODE_PREFIX}${rest}`;
+    }
+    setManualTokenInput(val);
+  };
+
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (manualTokenInput.trim()) {
-      onScanSuccess(manualTokenInput.trim());
+    const token = manualTokenInput.trim().toUpperCase();
+    if (token && token !== CODE_PREFIX) {
+      onScanSuccess(token);
       setShowManualModal(false);
-      setManualTokenInput('');
+      setManualTokenInput(CODE_PREFIX);
     }
   };
 
@@ -169,7 +281,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, isProcessin
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00F0FF]"></span>
               </span>
               <span className="text-[10px] font-mono font-bold tracking-widest text-[#00F0FF] uppercase">
-                RADAR SCANNER ACTIVE
+                {isSwitchingCamera ? 'SWITCHING CAMERA...' : (scannerStarted ? 'RADAR SCANNER ACTIVE' : 'CAMERA STANDBY')}
               </span>
             </div>
           </div>
@@ -217,7 +329,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, isProcessin
             </div>
             <p className="text-xs font-bold text-slate-200 mb-4 max-w-xs">{cameraError}</p>
             <button
-              onClick={() => setShowManualModal(true)}
+              onClick={openManualModal}
               className="px-4 py-2.5 text-xs font-bold font-mono tracking-wider uppercase bg-[#00F0FF] hover:bg-[#00d4e0] text-black rounded-xl border border-black shadow-comic flex items-center gap-2 cursor-pointer"
             >
               <Keyboard className="w-4 h-4 stroke-[2.5]" />
@@ -230,10 +342,15 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, isProcessin
         <div className="absolute bottom-3.5 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/80 backdrop-blur-md border border-white/15 px-3 py-1.5 rounded-2xl shadow-xl z-20 pointer-events-auto">
           <button
             onClick={toggleCamera}
+            disabled={isSwitchingCamera}
             title="Switch Camera Lens"
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white hover:text-[#00F0FF] transition-all cursor-pointer"
+            className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white hover:text-[#00F0FF] transition-all cursor-pointer disabled:opacity-50"
           >
-            <SwitchCamera className="w-4 h-4 stroke-[2.5]" />
+            {isSwitchingCamera ? (
+              <RefreshCw className="w-4 h-4 stroke-[2.5] animate-spin text-[#00F0FF]" />
+            ) : (
+              <SwitchCamera className="w-4 h-4 stroke-[2.5]" />
+            )}
           </button>
 
           {hasTorch && (
@@ -251,7 +368,7 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, isProcessin
           )}
 
           <button
-            onClick={() => setShowManualModal(true)}
+            onClick={openManualModal}
             title="Manual Code Input"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#00F0FF] hover:bg-[#00d4e0] text-black text-xs font-bold font-mono transition-all shadow-[0_0_12px_rgba(0,240,255,0.4)] cursor-pointer"
           >
@@ -275,50 +392,38 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess, isProcessin
               <span className="p-1 bg-[#00F0FF] text-black border-2 border-black shadow-comic-sm">
                 <Keyboard className="w-4 h-4 stroke-[2.5]" />
               </span>
-              MANUAL PASSPORT OVERRIDE
+              MANUAL ATTENDANCE ENTRY
             </h3>
             <p className="text-xs text-slate-300 mb-4">
-              Type or paste the participant's encrypted passport code:
+              Enter participant code (prefix <span className="text-[#00F0FF] font-mono font-bold">ZIN26-</span> is set by default):
             </p>
 
-            <form onSubmit={handleManualSubmit} className="space-y-3">
-              <input
-                type="text"
-                autoFocus
-                value={manualTokenInput}
-                onChange={(e) => setManualTokenInput(e.target.value)}
-                placeholder="e.g. PASSPORT-ARUN-8899"
-                className="w-full px-3 py-2.5 bg-[#FFFDF0] text-black border-2 border-black text-sm font-mono font-bold shadow-comic-sm placeholder-slate-500 focus:outline-none focus:bg-white"
-              />
-
-              {/* Sample quick tokens for testing */}
-              <div className="text-[11px] text-slate-300 pt-1 font-comic uppercase tracking-wider font-bold">
-                QUICK SIMULATION TOKENS:
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {['PASSPORT-ARUN-8899', 'PASSPORT-SNEHA-7744', 'PASSPORT-VIKRAM-3322', 'PASSPORT-POOJA-9911'].map(tok => (
-                    <button
-                      type="button"
-                      key={tok}
-                      onClick={() => setManualTokenInput(tok)}
-                      className="px-2 py-0.5 bg-[#12141d] hover:bg-slate-800 text-[#00F0FF] font-mono text-[10px] border border-black cursor-pointer"
-                    >
-                      {tok.replace('PASSPORT-', '')}
-                    </button>
-                  ))}
-                </div>
+            <form onSubmit={handleManualSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 uppercase mb-1">
+                  Participant Code
+                </label>
+                <input
+                  ref={manualInputRef}
+                  type="text"
+                  value={manualTokenInput}
+                  onChange={handleManualInputChange}
+                  placeholder="ZIN26-XXXX"
+                  className="w-full px-3 py-2.5 bg-[#FFFDF0] text-black border-2 border-black text-sm font-mono font-bold shadow-comic-sm placeholder-slate-400 focus:outline-none focus:bg-white tracking-wider uppercase"
+                />
               </div>
 
-              <div className="flex gap-2 pt-3">
+              <div className="flex gap-2 pt-2">
                 <button
                   type="submit"
-                  disabled={!manualTokenInput.trim()}
+                  disabled={!manualTokenInput.trim() || manualTokenInput.trim() === CODE_PREFIX}
                   className="flex-1 py-2.5 text-xs font-comic tracking-wider uppercase bg-[#00F0FF] hover:bg-[#00d4e0] text-black border-2 border-black shadow-comic-sm comic-btn disabled:opacity-50 cursor-pointer font-bold"
                 >
-                  DECRYPT & LOOKUP
+                  VERIFY ATTENDANCE
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowManualModal(false)}
+                  onClick={closeManualModal}
                   className="px-4 py-2.5 text-xs font-comic tracking-wider uppercase bg-slate-700 hover:bg-slate-600 text-white border-2 border-black shadow-comic-sm cursor-pointer"
                 >
                   CANCEL
